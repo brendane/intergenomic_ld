@@ -88,6 +88,7 @@ int main(int argc, char * argv[]) {
     vcfFile* symbiontVCF = bcf_open(argv[2], "r");
     bcf_hdr_t* symbiontHdr = bcf_hdr_read(symbiontVCF);
     bcf_hdr_set_samples(symbiontHdr, strainSampleString.c_str(), 0); // Only get the genotypes for particular strains
+    bcf1_t* record = bcf_init();
 
     vector<map<string, int>> symbiontGenotypes;     // Genotype states
     vector<string> symbiontRs;                      // Variant IDs
@@ -102,7 +103,6 @@ int main(int argc, char * argv[]) {
     }
 
     // Loop over lines in the variant file
-    bcf1_t* record = bcf_init();
     while(bcf_read(symbiontVCF, symbiontHdr, record) == 0) {
 
         // Have to tell htslib to parse the information
@@ -119,10 +119,9 @@ int main(int argc, char * argv[]) {
         for (i=0; i<nsmpl; i++) {
             int32_t *ptr = gt_arr + i*max_ploidy;
             for (j=0; j<max_ploidy; j++) {
-                cout << i << " " << j << " " << max_ploidy << endl;
+
                 // if true, the sample has smaller ploidy
                 if ( ptr[j]==bcf_int32_vector_end ) break;
-                cout << i << " " << j << " " << endl;
 
                 // missing allele: do not enter a value
                 if ( bcf_gt_is_missing(ptr[j]) ) continue;
@@ -152,7 +151,6 @@ int main(int argc, char * argv[]) {
     // Step 3: Loop through host variants and calculate LD for all combinations
     //         of host and symbiont variant
 
-    cout << "Step 3" << endl;
     cout << "symbiont_variant\thost_variant\tr2" << endl;
 
     vcfFile* hostVCF = bcf_open(argv[3], "r");
@@ -208,7 +206,7 @@ int main(int argc, char * argv[]) {
         map<string, int> symGenos;
         map<string, int>::iterator its;
         map<string, vector<int>>::iterator ith;
-        for(size_t k=0; i<symbiontGenotypes.size(); i++) {
+        for(size_t k=0; k<symbiontGenotypes.size(); k++) {
             // Loop over strains
             symGenos = symbiontGenotypes[k];
             for(const auto& strain: symbiontSamples) { 
@@ -241,20 +239,21 @@ int main(int argc, char * argv[]) {
 
                 }
 
-                // Adjust allele frequencies for missing data
-                float h = b + B;
-                b /= h;
-                B /= h;
-                float s = a + A;
-                a /= s;
-                A /= s;
-                AB /= s;
-
-                // Calculate LD
-                cout << symbiontRs[k] << "\t" << hostRs << "\t" <<
-                    calcR2(AB, A, B) << endl;
-
             }
+
+            // Adjust allele frequencies for missing data
+            float h = b + B;
+            b /= h;
+            B /= h;
+            float s = a + A;
+            a /= s;
+            A /= s;
+            AB /= s;
+
+            // Calculate LD
+            cout << symbiontRs[k] << "\t" << hostRs << "\t" <<
+                calcR2(AB, A, B) << endl;
+
         }
         hostGenotypes.clear();
 
@@ -266,5 +265,5 @@ int main(int argc, char * argv[]) {
     bcf_hdr_destroy(hostHdr);
     bcf_close(hostVCF);
     free(gt_arr);
-    
+
 }
