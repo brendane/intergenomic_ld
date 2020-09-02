@@ -9,9 +9,11 @@
  *
  */
 
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <math.h>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,11 +24,14 @@
 using std::cout;
 using std::cerr;
 using std::endl;
-using std::map;
-using std::string;
-using std::vector;
-using std::pair;
+using std::getline;
+using std::ifstream;
 using std::make_pair;
+using std::map;
+using std::pair;
+using std::string;
+using std::stringstream;
+using std::vector;
 
 float calcR2(float AB, float A, float B) {
     float D = AB - (A * B);
@@ -38,11 +43,47 @@ float calcR2(float AB, float A, float B) {
 int main(int argc, char * argv[]) {
 
     // Step 1: Read table of strain frequencies
-    //string strainSampleString = "";
-    string strainSampleString = "NA00001,NA00003";
-    string hostSampleString = "NA00001,NA00003";
+    string strainSampleString = "";
+    string hostSampleString = "";
+    string host, strain;
     map<pair<string, string>, float> strainFrequencies;
+    ifstream freqFile(argv[1]);
+    string line, item;
+    vector<string> fields;
+    vector<string> fieldnames;
+    int nl = -1;
+    while(getline(freqFile, line)) {
+        nl++;
+        stringstream ss(line);
+        while(getline(ss, item, '\t')) {
+            fields.push_back(item);
+        }
+        int n = -1;
+        for(const auto& f:fields) {
+            n++;
+            if(nl == 0) {
+                if(n == 0) continue;
+                fieldnames.push_back(f);
+                if(n > 1) hostSampleString = hostSampleString.append(",");
+                hostSampleString = hostSampleString.append(f);
+            } else {
+                nl++;
+                if(n == 0) {
+                    if(nl > 0) strainSampleString = strainSampleString.append(",");
+                    strainSampleString = strainSampleString.append(f);
+                    strain = f;
+                } else {
+                    host = fieldnames[n];
+                    strainFrequencies[make_pair(strain, host)] = (float)atof(f.c_str());
+                }
+            }
+        }
+        fields.clear();
+    }
+    freqFile.close();
 
+
+    /*****************************************************************/
 
     // Step 2: Read and store all symbiont variants
     vcfFile* symbiontVCF = bcf_open(argv[2], "r");
@@ -102,17 +143,10 @@ int main(int argc, char * argv[]) {
     // Clean up
     bcf_hdr_destroy(symbiontHdr);
     bcf_close(symbiontVCF);
-    
-    /*
-    // Test:
-    for(const auto& rec: symbiontGenotypes) {
-        for(const auto& strain: symbiontSamples) { 
-            //cout << rec[strain] << " ";
-            cout << rec.find(strain)->second << " ";
-        }
-        cout << endl;
-    }
-    */
+
+
+
+    /*****************************************************************/
 
     // Step 3: Loop through host variants and calculate LD for all combinations
     //         of host and symbiont variant
@@ -231,5 +265,4 @@ int main(int argc, char * argv[]) {
     bcf_close(hostVCF);
     free(gt_arr);
     
-
 }
