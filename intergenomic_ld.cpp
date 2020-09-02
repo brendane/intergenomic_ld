@@ -67,9 +67,8 @@ int main(int argc, char * argv[]) {
                 if(n > 1) hostSampleString = hostSampleString.append(",");
                 hostSampleString = hostSampleString.append(f);
             } else {
-                nl++;
                 if(n == 0) {
-                    if(nl > 0) strainSampleString = strainSampleString.append(",");
+                    if(nl > 1) strainSampleString = strainSampleString.append(",");
                     strainSampleString = strainSampleString.append(f);
                     strain = f;
                 } else {
@@ -86,7 +85,6 @@ int main(int argc, char * argv[]) {
     /*****************************************************************/
 
     // Step 2: Read and store all symbiont variants
-    cout << "Step 2" << endl;
     vcfFile* symbiontVCF = bcf_open(argv[2], "r");
     bcf_hdr_t* symbiontHdr = bcf_hdr_read(symbiontVCF);
     bcf_hdr_set_samples(symbiontHdr, strainSampleString.c_str(), 0); // Only get the genotypes for particular strains
@@ -121,7 +119,7 @@ int main(int argc, char * argv[]) {
         for (i=0; i<nsmpl; i++) {
             int32_t *ptr = gt_arr + i*max_ploidy;
             for (j=0; j<max_ploidy; j++) {
-                cout << i << " " << j << " " << endl;
+                cout << i << " " << j << " " << max_ploidy << endl;
                 // if true, the sample has smaller ploidy
                 if ( ptr[j]==bcf_int32_vector_end ) break;
                 cout << i << " " << j << " " << endl;
