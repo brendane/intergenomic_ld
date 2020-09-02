@@ -86,6 +86,7 @@ int main(int argc, char * argv[]) {
     /*****************************************************************/
 
     // Step 2: Read and store all symbiont variants
+    cout << "Step 2" << endl;
     vcfFile* symbiontVCF = bcf_open(argv[2], "r");
     bcf_hdr_t* symbiontHdr = bcf_hdr_read(symbiontVCF);
     bcf_hdr_set_samples(symbiontHdr, strainSampleString.c_str(), 0); // Only get the genotypes for particular strains
@@ -120,8 +121,10 @@ int main(int argc, char * argv[]) {
         for (i=0; i<nsmpl; i++) {
             int32_t *ptr = gt_arr + i*max_ploidy;
             for (j=0; j<max_ploidy; j++) {
+                cout << i << " " << j << " " << endl;
                 // if true, the sample has smaller ploidy
                 if ( ptr[j]==bcf_int32_vector_end ) break;
+                cout << i << " " << j << " " << endl;
 
                 // missing allele: do not enter a value
                 if ( bcf_gt_is_missing(ptr[j]) ) continue;
@@ -151,6 +154,7 @@ int main(int argc, char * argv[]) {
     // Step 3: Loop through host variants and calculate LD for all combinations
     //         of host and symbiont variant
 
+    cout << "Step 3" << endl;
     cout << "symbiont_variant\thost_variant\tr2" << endl;
 
     vcfFile* hostVCF = bcf_open(argv[3], "r");
