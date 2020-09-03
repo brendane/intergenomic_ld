@@ -90,11 +90,12 @@ int main(int argc, char * argv[]) {
     bcf_hdr_set_samples(symbiontHdr, strainSampleString.c_str(), 0); // Only get the genotypes for particular strains
     bcf1_t* record = bcf_init();
 
-    vector<map<string, int>> symbiontGenotypes;     // Genotype states
+    vector<vector<int>> symbiontGenotypes;     // Genotype states
     vector<string> symbiontRs;                      // Variant IDs
     int i, j, ngt, nsmpl = bcf_hdr_nsamples(symbiontHdr);   // Setup for reading genotypes
     int32_t *gt_arr = NULL, ngt_arr = 0;
     int max_ploidy = 1; // Assume haploid symbiont
+    int allele_index;
 
     // Keep vector of sample names in same order as variant file
     vector<string> symbiontSamples;
@@ -112,7 +113,7 @@ int main(int argc, char * argv[]) {
         symbiontRs.push_back(string(record->d.id));
 
         // Store genotype states; key = strain, value = genotype index
-        map<string, int> genotypes;
+        vector<int> genotypes;
 
         ngt = bcf_get_genotypes(symbiontHdr, record, &gt_arr, &ngt_arr);
 
@@ -124,16 +125,18 @@ int main(int argc, char * argv[]) {
                 if ( ptr[j]==bcf_int32_vector_end ) break;
 
                 // missing allele: do not enter a value
-                if ( bcf_gt_is_missing(ptr[j]) ) continue;
-
-                // the VCF 0-based allele index stored in genotypes
-                int allele_index = bcf_gt_allele(ptr[j]);
-                if(allele_index > 1) {
-                    cerr << "ERROR: Found genotype > 1 (multiallelic?) " <<
-                        record->d.id << endl;
-                    exit(1);
+                if ( bcf_gt_is_missing(ptr[j]) ) {
+                    allele_index = -1;
+                } else {
+                    // the VCF 0-based allele index stored in genotypes
+                    allele_index = bcf_gt_allele(ptr[j]);
+                    if(allele_index > 1) {
+                        cerr << "ERROR: Found genotype > 1 (multiallelic?) " <<
+                            record->d.id << endl;
+                        exit(1);
+                    }
                 }
-                genotypes[symbiontSamples[i]] = allele_index;
+                genotypes.push_back(allele_index);
             }
         }
         symbiontGenotypes.push_back(genotypes);
@@ -159,7 +162,6 @@ int main(int argc, char * argv[]) {
 
     i, j, ngt, nsmpl = bcf_hdr_nsamples(hostHdr);   // Setup for reading genotypes
     *gt_arr = NULL, ngt_arr = 0;
-    cout << "host max ploidy " << max_ploidy << endl;
 
     // Keep vector of sample names in same order as variant file
     vector<string> hostSamples;
@@ -167,8 +169,22 @@ int main(int argc, char * argv[]) {
         hostSamples.push_back(string(hostHdr->samples[k]));
     }
 
+    vector<vector<float>> strainFrequenciesVec;
+    for(const auto& host: hostSamples) {
+        vector<float> sf;
+        for(const auto& strain: symbiontSamples) { 
+            sf.push_back(strainFrequencies[make_pair(strain, host)]);
+        }
+        strainFrequenciesVec.push_back(sf);
+    }
+
+
     // Loop over lines in the variant file
-    map<string, vector<int>> hostGenotypes;
+    vector<vector<int>> hostGenotypes;
+    float a, A, b, B, AB, freq;
+    map<string, int> symGenos;
+    map<string, int>::iterator its;
+    map<string, vector<int>>::iterator ith;
     while(bcf_read(hostVCF, hostHdr, record) == 0) {
 
         // Have to tell htslib to parse the information
@@ -182,61 +198,60 @@ int main(int argc, char * argv[]) {
         ngt = bcf_get_genotypes(hostHdr, record, &gt_arr, &ngt_arr);
         max_ploidy = ngt/nsmpl;
 
+        // Store host allele states and calculate allele frequency
+        b = 0.0, B = 0.0;
         for (i=0; i<nsmpl; i++) {
+            vector<int> hg;
             int32_t *ptr = gt_arr + i*max_ploidy;
             for (j=0; j<max_ploidy; j++) {
                 // if true, the sample has smaller ploidy
                 if ( ptr[j]==bcf_int32_vector_end ) break;
 
                 // missing allele: do not enter a value
-                if ( bcf_gt_is_missing(ptr[j]) ) continue;
-
-                // the VCF 0-based allele index stored in genotypes
-                int allele_index = bcf_gt_allele(ptr[j]);
-                if(allele_index > 1) {
-                    cerr << "ERROR: Found genotype > 1 (multiallelic?) " <<
-                        record->d.id << endl;
-                    exit(1);
+                if ( bcf_gt_is_missing(ptr[j]) ) {
+                    allele_index = -1;
+                } else {
+                    // the VCF 0-based allele index stored in genotypes
+                    allele_index = bcf_gt_allele(ptr[j]);
+                    if(allele_index > 1) {
+                        cerr << "ERROR: Found genotype > 1 (multiallelic?) " <<
+                            record->d.id << endl;
+                        exit(1);
+                    }
                 }
-                hostGenotypes[hostSamples[i]].push_back(allele_index);
+                if(allele_index == 0) b += 1;
+                if(allele_index == 1) B += 1;
+                hg.push_back(allele_index);
             }
+            hostGenotypes.push_back(hg);
         }
 
-        // Loop over symbiont records (a,A=sym, b,B=host)
-        float a = 0.0, A = 0.0, b = 0.0, B = 0.0, AB = 0.0, freq;
-        map<string, int> symGenos;
-        map<string, int>::iterator its;
-        map<string, vector<int>>::iterator ith;
+        // Adjust host allele frequencies for missing data
+        float h = b + B;
+        b /= h;
+        B /= h;
+
+        // Loop over symbiont records (a,A=sym, b,B=host). Have to loop
+        // over hosts at the same time to count allele combinations.
+        a = 0.0, A = 0.0, AB = 0.0;
         for(size_t k=0; k<symbiontGenotypes.size(); k++) {
-            a = 0.0, A = 0.0, b = 0.0, B = 0.0, AB = 0.0;
+            a = 0.0, A = 0.0, AB = 0.0;
+
             // Loop over strains
-            symGenos = symbiontGenotypes[k];
-            for(const auto& strain: symbiontSamples) { 
-                its = symGenos.find(strain);
-                if(its == symGenos.end()) continue; // Missing genotype
+            for(size_t l=0; l<symbiontGenotypes[k].size(); l++) {
 
                 // Loop over hosts, assuming equal frequency of each host genotype
-                for(const auto& host: hostSamples) {
-                    ith = hostGenotypes.find(host);
-                    if(ith == hostGenotypes.end()) continue; // Missing genotype
+                for(size_t m=0; m<hostGenotypes.size(); m++) {
 
-                    freq = strainFrequencies[make_pair(strain, host)];
+                    freq = strainFrequenciesVec[m][l];
 
-                    for(const auto& allele: ith->second) {
+                    for(size_t o=0; o<hostGenotypes[m].size(); o++) {
 
-                        if(its->second == 0) {
+                        if(symbiontGenotypes[k][l] == 0) {
                             a += freq;
-                        } else {
+                        } else if(symbiontGenotypes[k][l] == 1) {
                             A += freq;
-                        }
-
-                        if(allele == 0) {
-                            b += 1;
-                        } else {
-                            B += 1;
-                            if(its->second == 1) {
-                                AB += freq;
-                            }
+                            if(hostGenotypes[m][o] == 1) AB += freq;
                         }
 
                     }
@@ -246,9 +261,6 @@ int main(int argc, char * argv[]) {
             // Adjust allele frequencies for missing data
             //cout << symbiontRs[k] << " " << hostRs << " A:" <<
             //    A << " a:" << a << " B:" << B << " b: " << b << " AB:" << AB << endl;
-            float h = b + B;
-            b /= h;
-            B /= h;
             float s = a + A;
             a /= s;
             A /= s;
@@ -261,6 +273,7 @@ int main(int argc, char * argv[]) {
                 calcR2(AB, A, B) << endl;
 
         }
+
         hostGenotypes.clear();
 
     }
