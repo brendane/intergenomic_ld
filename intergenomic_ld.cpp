@@ -72,7 +72,7 @@ int main(int argc, char * argv[]) {
                     strainSampleString = strainSampleString.append(f);
                     strain = f;
                 } else {
-                    host = fieldnames[n];
+                    host = fieldnames[n-1];
                     strainFrequencies[make_pair(strain, host)] = (float)atof(f.c_str());
                 }
             }
@@ -159,7 +159,7 @@ int main(int argc, char * argv[]) {
 
     i, j, ngt, nsmpl = bcf_hdr_nsamples(hostHdr);   // Setup for reading genotypes
     *gt_arr = NULL, ngt_arr = 0;
-    max_ploidy = ngt/nsmpl;
+    cout << "host max ploidy " << max_ploidy << endl;
 
     // Keep vector of sample names in same order as variant file
     vector<string> hostSamples;
@@ -180,6 +180,7 @@ int main(int argc, char * argv[]) {
         // Store genotype states; key = strain, value = genotype index
 
         ngt = bcf_get_genotypes(hostHdr, record, &gt_arr, &ngt_arr);
+        max_ploidy = ngt/nsmpl;
 
         for (i=0; i<nsmpl; i++) {
             int32_t *ptr = gt_arr + i*max_ploidy;
@@ -207,6 +208,7 @@ int main(int argc, char * argv[]) {
         map<string, int>::iterator its;
         map<string, vector<int>>::iterator ith;
         for(size_t k=0; k<symbiontGenotypes.size(); k++) {
+            a = 0.0, A = 0.0, b = 0.0, B = 0.0, AB = 0.0;
             // Loop over strains
             symGenos = symbiontGenotypes[k];
             for(const auto& strain: symbiontSamples) { 
@@ -215,18 +217,19 @@ int main(int argc, char * argv[]) {
 
                 // Loop over hosts, assuming equal frequency of each host genotype
                 for(const auto& host: hostSamples) {
-                    ith = hostGenotypes.find(strain);
+                    ith = hostGenotypes.find(host);
                     if(ith == hostGenotypes.end()) continue; // Missing genotype
 
                     freq = strainFrequencies[make_pair(strain, host)];
 
-                    if(its->second == 0) {
-                        a += freq;
-                    } else {
-                        A += freq;
-                    }
-
                     for(const auto& allele: ith->second) {
+
+                        if(its->second == 0) {
+                            a += freq;
+                        } else {
+                            A += freq;
+                        }
+
                         if(allele == 0) {
                             b += 1;
                         } else {
@@ -235,13 +238,14 @@ int main(int argc, char * argv[]) {
                                 AB += freq;
                             }
                         }
+
                     }
-
                 }
-
             }
 
             // Adjust allele frequencies for missing data
+            //cout << symbiontRs[k] << " " << hostRs << " A:" <<
+            //    A << " a:" << a << " B:" << B << " b: " << b << " AB:" << AB << endl;
             float h = b + B;
             b /= h;
             B /= h;
@@ -249,6 +253,8 @@ int main(int argc, char * argv[]) {
             a /= s;
             A /= s;
             AB /= s;
+            //cout << "Adjusted " << symbiontRs[k] << " " << hostRs << " A:" <<
+            //    A << " B:" << B << " AB:" << AB << " s:" << s << endl;
 
             // Calculate LD
             cout << symbiontRs[k] << "\t" << hostRs << "\t" <<
